@@ -1,7 +1,6 @@
 # Load packages
 packages <-
   c("tidyverse",
-    "tibble",
     "dataverse",
     "wbstats",
     "Matrix",
@@ -43,6 +42,7 @@ wdi <-
 
 # Some quick exploration
 mean_trade <- trade %>%
+  filter(year > 2015) %>%
   group_by(location_code, hs_product_code) %>%
   summarize(
     export_value = mean(export_value, na.rm = TRUE),
@@ -147,6 +147,9 @@ trade_year <- trade_year %>%
   select(-location_code) %>%
   as.matrix() %>%
   Matrix(dimnames = list(locations = locations, products = products))
+
+
+dim(trade_year / rowSums(trade_year))
 
 # Get RCA
 rca <-

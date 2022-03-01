@@ -60,8 +60,10 @@ rbind(A, B)
 cbind(A, B)
 
 # Common transformations
-rowSums(A)
+A[1, 2] <- NA
+rowSums(A, na.rm=TRUE)
 colSums(A)
+
 # What if I have NA's in the matrix?
 
 # Eigen decomposition
