@@ -1,0 +1,409 @@
+---
+title: "Density Regressions - API-313M"
+output: html_notebook
+---
+
+```{r, setwd, include=FALSE}
+# Set working directory appropriately
+working_dir <- "/Users/shg309/Dropbox (Personal)/Education/hks_cid_growth_lab/misc/gl_complexity_review"
+knitr::opts_knit$set(root.dir = working_dir)
+```
+
+```{r, setup, include=FALSE}
+# Load packages
+packages <-
+    c(
+        "tidyverse",
+        "dataverse",
+        "wbstats",
+        "Matrix",
+        "RCurl",
+        "economiccomplexity",
+        "modelsummary",
+        "here"
+    )
+sapply(packages, library, character.only = T)
+setwd(working_dir)
+here::i_am("proj/api_313m/linear_algebra.R")
+source(here("proj", "api_313m", "setup.R"), local = knitr::knit_global())
+```
+
+This review session will cover the following topics:
+
+- Recap of density and proximity
+- Density and growth regressions
+- Replication: Hausmann, R., Stock, D. P., & Yildrim, M. A. (2021). Implied comparative advantage. Research Policy, 104143.
+
+# Recap of density and proximity
+
+Proximity capture the relatedness of two entities, as in lecture 5:
+
+Using minimum conditional probability method for calculating proximity
+$$\phi_{pp'} = \frac{\sum_c M_{cp} M_{cp'}}{max(\sum_c{M_{cp}}, \sum_c{M_{cp'}})}$$
+
+In matrix notation:
+
+$$ \Phi = \min{(U^{-1} M M^T, M M^T U^{-1})} - \mathbb{1}_p $$
+
+Where $U$ is the ubiquity matrix (ubiquity on diagonal), and $I_P$ is the identity matrix
+
+
+Appears in several domains:
+
+- International trade (proximities between products / countries)
+- Cities
+- Occupations / labor flows
+- Patents
+- Research papers
+
+Density captures the overlap between the capabilities present in a country and those required by a product. It is the average proximity between the products that a country already makes ($M_{cp} > 1$), and the target product $p$.
+
+$$d_{cp} = \frac{\sum_p M_{cp'}\phi_{pp'}}{\sum_p \phi_{pp'}}$$
+
+In matrix notation:
+
+$$ \delta = diag (\Phi \mathbb{1}_p)  $$
+$$ D = M (\delta^{-1} M^T) $$
+
+# Density regressions
+
+The following snippet downloads trade data. If you're unable to download the file programmatically,
+just go to [this link](ttps://www.dropbox.com/s/34a0tnboycvsnx0/country_hsproduct4digit_year.parquet) and download the data manually and read it in using `read_parquet`.
+
+```{r}
+# Download trade data
+tradepath <-
+  "https://intl-atlas-downloads.s3.amazonaws.com/country_hsproduct4digit_year.csv.zip"
+proxpath <-
+  "http://intl-atlas-downloads.s3.amazonaws.com/atlas_2_16_6/hs92_proximities.csv"
+prodpath <-
+  "https://intl-atlas-downloads.s3.amazonaws.com/hs_product.zip"
+countrypath <-
+  "https://intl-atlas-downloads.s3.amazonaws.com/location.zip"
+# Set up folders
+check_and_create_dir <- function(dirpath) {
+  if (!dir.exists(dirpath)) {
+    dir.create(dirpath)
+  }
+}
+check_and_create_dir(here("data/raw"))
+check_and_create_dir(here("data/processed"))
+
+# Filepaths
+trade_local_path <-
+  here("data/raw/country_hsproduct4digit_year.csv.zip")
+prox_local_path <- here("data/raw/hs92_proximities.csv")
+prod_local_path <- here("data/raw/hs_product.zip")
+country_local_path <- here("data/raw/location.zip")
+if (!file.exists(trade_local_path)) {
+  # Download
+  download.file(
+    url = tradepath,
+    destfile = trade_local_path,
+    method = "libcurl",
+    timeout = 1200
+  )
+  download.file(url = prodpath,
+                destfile = prod_local_path,)
+  download.file(url = countrypath,
+                destfile = country_local_path,)
+  # Once downloaded, save it locally so you don't have to download each time
+  trade <-
+    read_csv(trade_local_path) %>%
+    select(location_code, hs_product_code, year, export_value) %>%
+    write_csv(here("data/processed/exports_data.csv"))
+  prod <- read_csv(prod_local_path) %>%
+    select(-product_id) %>%
+    write_csv(here("data/processed/hs_prod.csv"))
+  country <- read_csv(country_local_path) %>%
+    select(-location_id) %>%
+    write_csv(here("data/processed/country.csv"))
+}
+if (!file.exists(prox_local_path)) {
+  download.file(
+    url = proxpath,
+    destfile = prox_local_path,
+    method = "libcurl",
+    timeout = 1200
+  )
+  prox <-
+    read_csv(here("data/raw/hs92_proximities.csv")) %>%
+    write_csv(here("data/processed/prox.csv"))
+}
+
+```
+
+Now that we have the trade data downloaded, we will now recreate the metrics used in the paper: Hausmann, R., Stock, D. P., & Yildrim, M. A. (2021). [Implied comparative advantage](https://www.sciencedirect.com/science/article/pii/S0048733320302183). Research Policy, 104143.
+
+
+
+```{r}
+base_year <- 2010
+end_year <- 2020
+
+# Read in trade data and remove services
+prox <- read_csv(here("data/processed/prox.csv"))
+prod <- read_csv(here("data/processed/hs_prod.csv")) %>%
+  rename(product = hs_product_code, product_name = hs_product_name_short_en)
+country <- read_csv(here("data/processed/country.csv")) %>%
+  rename(country = location_code, country_name = location_name_short_en)
+
+trade <- read_csv(here("data/processed/exports_data.csv")) %>%
+  filter(year >= base_year,
+         hs_product_code %in% unique(prox$commoditycode_1))
+
+# Rectangularize data
+trade <- trade %>%
+  tidyr::complete(year, location_code, hs_product_code, fill = list(export_value =
+                                                                      0)) %>%
+  rename(country = location_code,
+         product = hs_product_code,
+         value = export_value)
+
+# Compute complexity metrics
+bi <- balassa_index(trade, discrete = FALSE)
+rca <- bi %>%
+  as.matrix() %>%
+  as_tibble() %>%
+  mutate(country = rownames(bi)) %>%
+  pivot_longer(-country, names_to = "product", values_to = "rca")
+
+# Get ECI, PCI
+cm <- complexity_measures(bi, method = 'reflections')
+eci <- enframe(cm$complexity_index_country) %>%
+  rename(country = name, eci = value) %>%
+  left_join(country)
+pci <- enframe(cm$complexity_index_product) %>%
+  rename(product = name, pci = value) %>%
+  left_join(prod)
+
+# Get WDI data
+# Population, GDP per capita, GDP
+wb_indicators <- c(gdp_capita = "NY.GDP.PCAP.CD",
+                   pop = "SP.POP.TOTL",
+                   gdp = "NY.GDP.MKTP.CD")
+
+wdi <-
+  wb_data(wb_indicators, start_date = base_year, end_date = end_year + 1) %>%
+  select(-iso2c, -country) %>%
+  rename(country = iso3c, year = date) %>%
+  filter(!is.null(pop)) %>%
+  filter(year >= base_year, year <= end_year)
+
+# Add these back to the trade dataset
+trade_cm <- trade %>%
+  left_join(rca) %>%
+  left_join(select(eci, -country_name)) %>%
+  left_join(select(pci, -product_name)) %>%
+  inner_join(wdi)
+
+# Get rpca
+trade_cm <- trade_cm %>%
+  group_by(year, product) %>%
+  mutate(prod_total = sum(value, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(pop_total = sum(pop, na.rm = TRUE)) %>%
+  mutate(rpca = (value / pop) / (prod_total / pop_total)) %>%
+  select(-prod_total, -pop_total)
+# mutate(rpca = ifelse(rpca >= 1, 1, 0))
+
+# Repeat for each year
+selected_year <- 2010
+
+# Convert rpca to matrix
+rpca_mat <- trade_cm %>%
+  filter(year == selected_year) %>%
+  mutate(rpca = replace_na(rpca, 0)) %>%
+  pivot_wider(
+    id_cols = country,
+    names_from = product,
+    values_from = rpca,
+    values_fill = 0
+  )
+country_list <- rpca_mat$country
+rpca_mat <- rpca_mat %>%
+  select(-country)
+prod_list <- colnames(rpca_mat)
+rpca_mat <- as.matrix(rpca_mat)
+colnames(rpca_mat) <- prod_list
+rownames(rpca_mat) <- country_list
+
+# Check if any rows or cols sum to zero and remove
+rows_to_remove <- enframe(rowSums(rpca_mat)) %>%
+  filter(value == 0) %>%
+  pull(name)
+cols_to_remove <- enframe(colSums(rpca_mat)) %>%
+  filter(value == 0) %>%
+  pull(name)
+rpca_mat <-
+  rpca_mat[!rownames(rpca_mat) %in% rows_to_remove, !colnames(rpca_mat) %in% cols_to_remove]
+prod_list <- colnames(rpca_mat)
+country_list <- rownames(rpca_mat)
+
+# Mean rpca by location
+location_mean_rpca <- trade_cm %>%
+  group_by(year, country) %>%
+  summarise(location_mean_rpca = mean(rpca, na.rm = TRUE))
+
+
+# Compute proximities as per paper
+prox_product <- (1 + cor(rpca_mat)) * .5
+rownames(prox_product) <- prod_list
+colnames(prox_product) <- prod_list
+
+prox_country <- (1 + cor(t(rpca_mat))) * .5
+rownames(prox_country) <- country_list
+colnames(prox_country) <- country_list
+
+# Compute densities as per paper
+prox_product_sum <- colSums(prox_product)
+density_prod <- rpca_mat %*% (t(prox_product) / prox_product_sum)
+
+prox_country_sum <- colSums(prox_country)
+density_country <-
+  t(rpca_mat) %*% (t(prox_country) / prox_country_sum)
+
+density_prod <- density_prod %>%
+  as.data.frame()
+density_country <- density_country %>%
+  as.data.frame()
+
+density_prod <- density_prod %>%
+  mutate(country = rownames(density_prod)) %>%
+  pivot_longer(-country, names_to = "product", values_to = "density_prod")
+
+density_country <- density_country %>%
+  mutate(product = rownames(density_country)) %>%
+  pivot_longer(-product, names_to = "country", values_to = "density_country")
+
+# Compute growth rates
+exports <- trade_cm %>%
+  select(year, country, product, value) %>%
+  filter(year %in% c(2010, 2020)) %>%
+  pivot_wider(
+    id_cols = c(country, product),
+    names_from = year,
+    values_from = value
+  ) %>%
+  filter(`2010` > 0, `2020` > 0) %>%
+  mutate(growth_rate = log(`2020` / `2010`) / (2020 - 2010))
+
+product_sum <- exports %>%
+  select(-country) %>%
+  group_by(product) %>%
+  mutate_all(~ sum(.x, na.rm = TRUE))
+country_sum <- exports %>%
+  select(-product) %>%
+  group_by(country) %>%
+  mutate_all(~ sum(.x, na.rm = TRUE))
+exports <- exports %>%
+  mutate(radial_product_growth = log(product_sum$`2020` / product_sum$`2010`) / (2020 -
+                                                                                   2010)) %>%
+  mutate(radial_country_growth = log(country_sum$`2020` / country_sum$`2010`) / (2020 -
+                                                                                   2010)) %>%
+  mutate(
+    base_year_country_total = country_sum$`2010`,
+    base_year_product_total = product_sum$`2010`,
+    base_year_exports = `2010`
+  ) %>%
+  select(-`2010`, -`2020`)
+
+# Merge everything back
+trade_cm <- trade_cm %>%
+  inner_join(exports) %>%
+  inner_join(location_mean_rpca) %>%
+  inner_join(density_prod) %>%
+  inner_join(density_country)
+
+# Remove infs
+trade_cm <- trade_cm %>%
+  filter(is.finite(log(growth_rate))) %>%
+  filter(is.finite(log(rpca)))
+
+```
+
+Notice that we calculated a (perhaps) new metric called `rpca`, or `RpCA`, which is the population-weighted market share. In some cases, rpca acts as a better metric than RCA as it weights by population instead of product market size. However, large countries such as India and China are disadvantaged by the RpCA metric.
+
+The densities (country-space density and product-space density) are then used to get a sense of how far a country-product is from its "expected" level of trade. The residuals from the first stage regressions are used to predict future growth in exports in the country-product.
+
+
+```{r}
+# Run regression
+reg_hybrid <-
+    lm(
+        log(rpca) ~ log(density_prod) + log(density_country),
+        data = trade_cm,
+        na.action = na.exclude
+    )
+reg_prod <-
+    lm(log(rpca) ~ log(density_prod),
+        data = trade_cm,
+        na.action = na.exclude
+    )
+reg_country <-
+    lm(log(rpca) ~ log(density_country),
+        data = trade_cm,
+        na.action = na.exclude
+    )
+
+first_stage_models <- list(
+    "(1)" = reg_prod,
+    "(2)" = reg_country,
+    "(3)" = reg_hybrid
+)
+
+modelsummary(
+    first_stage_models,
+    fmt = 2,
+    estimate  = "{estimate} ({std.error}){stars}",
+    output = here("proj/api_313m/tables/first_stage.txt")
+)
+
+# Second stage
+trade_cm <- trade_cm %>%
+    mutate(
+        residual_hybrid_density = resid(reg_hybrid),
+        residual_prod_space_density = resid(reg_prod),
+        residual_country_space_density = resid(reg_country)
+    )
+
+second_stage_models <- list(
+    "(1)" = lm(
+        log(growth_rate) ~ residual_prod_space_density,
+        data = trade_cm,
+        na.action = na.exclude
+    ),
+    "(2)" = lm(
+        log(growth_rate) ~ residual_country_space_density,
+        data = trade_cm,
+        na.action = na.exclude
+    ),
+    "(3)" = lm(
+        log(growth_rate) ~ residual_hybrid_density,
+        data = trade_cm,
+        na.action = na.exclude
+    ),
+    "(4)" = lm(
+        log(growth_rate) ~ residual_hybrid_density + log(base_year_exports) + log(pop) + log(base_year_product_total) + location_mean_rpca,
+        data = trade_cm,
+        na.action = na.exclude
+    ),
+    "(5)" = lm(
+        log(growth_rate) ~ log(base_year_exports) + log(pop) + log(base_year_product_total) + location_mean_rpca + radial_product_growth + radial_country_growth,
+        data = trade_cm,
+        na.action = na.exclude
+    ),
+    "(6)" = lm(
+        log(growth_rate) ~ residual_hybrid_density + log(base_year_exports) + log(pop) + log(base_year_product_total) + location_mean_rpca + radial_product_growth + radial_country_growth,
+        data = trade_cm,
+        na.action = na.exclude
+    )
+)
+
+modelsummary(
+    second_stage_models,
+    fmt = 2,
+    estimate  = "{estimate} ({std.error}){stars}",
+    output = here("proj/api_313m/tables/second_stage.txt")
+)
+```
