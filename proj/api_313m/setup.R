@@ -26,7 +26,8 @@ package_list <-
     "here",
     "modelsummary",
     "Matrix",
-    "wbstats"
+    "wbstats",
+    "RCurl"
   )
 
 # Check if packages are already installed, otherwise install them

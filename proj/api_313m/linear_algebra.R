@@ -62,7 +62,7 @@ cbind(A, B)
 # Common transformations
 A[1, 2] <- NA
 rowSums(A, na.rm=TRUE)
-colSums(A)
+colSums(A) # colSums are similar to np.sum(A, axis=1) in Python
 
 # What if I have NA's in the matrix?
 

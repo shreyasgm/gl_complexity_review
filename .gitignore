@@ -2,7 +2,8 @@
 *.Rproj
 1_netviz.ipynb
 product_space_eci_workshop.ipynb
-
+data/
+proj/api_313m/tables/
 
 ### JupyterNotebooks ###
 # gitignore template for Jupyter Notebooks
