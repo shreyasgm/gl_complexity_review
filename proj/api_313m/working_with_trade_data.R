@@ -20,9 +20,16 @@ dataverse_filelist <-
 
 # Download trade data and HS product classifications
 trade <-
-  get_dataframe_by_name("country_hsproduct2digit_year.tab", "10.7910/DVN/T4CHWJ")
+  get_dataframe_by_name(filename = "country_hsproduct2digit_year.dta",
+                        dataset = "10.7910/DVN/T4CHWJ",
+                        .f = haven::read_dta)
 hs_product <-
-  get_dataframe_by_name("hs_product.tab", "10.7910/DVN/3BAL1O")
+  get_dataframe_by_name(
+    "hs_product.tab",
+    "10.7910/DVN/3BAL1O",
+    .f = haven::read_dta,
+    original = TRUE
+  )
 
 # Backup download method
 # https://intl-atlas-downloads.s3.amazonaws.com/country_hsproduct2digit_year.csv.zip

@@ -3,6 +3,7 @@
 
 package_list <-
   c(
+    "remotes",
     "learnr",
     "foreign",
     "tidylog",
