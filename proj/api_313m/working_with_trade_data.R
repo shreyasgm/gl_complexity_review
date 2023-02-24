@@ -14,6 +14,7 @@ here::i_am("proj/api_313m/working_with_trade_data.R")
 
 # Look for trade data from Harvard Dataverse
 # https://dataverse.harvard.edu/dataverse/atlas
+Sys.setenv("DATAVERSE_SERVER" = "dataverse.harvard.edu")
 dataverse_dataset <- get_dataset("doi:10.7910/DVN/T4CHWJ")
 dataverse_filelist <-
   dataverse_dataset$files[c("filename", "contentType")]
@@ -84,7 +85,7 @@ ggplot(mean_trade) +
 
 # Alternate - tidy format
 mean_trade %>%
-  select(hs_product_code, export_value, import_value) %>%
+  select(location_code, hs_product_code, export_value, import_value) %>%
   pivot_longer(export_value:import_value,
                names_to = "trade_type",
                values_to = "trade_value") %>%

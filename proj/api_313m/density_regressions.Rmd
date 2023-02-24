@@ -23,7 +23,7 @@ packages <-
         "here"
     )
 sapply(packages, library, character.only = T)
-setwd(working_dir)
+# setwd(working_dir)
 here::i_am("proj/api_313m/linear_algebra.R")
 source(here("proj", "api_313m", "setup.R"), local = knitr::knit_global())
 ```
@@ -355,6 +355,12 @@ first_stage_models <- list(
 modelsummary(
     first_stage_models,
     fmt = 2,
+    estimate  = "{estimate} ({std.error}){stars}"
+)
+
+modelsummary(
+    first_stage_models,
+    fmt = 2,
     estimate  = "{estimate} ({std.error}){stars}",
     output = here("proj/api_313m/tables/first_stage.txt")
 )
@@ -398,6 +404,12 @@ second_stage_models <- list(
         data = trade_cm,
         na.action = na.exclude
     )
+)
+
+modelsummary(
+    second_stage_models,
+    fmt = 2,
+    estimate  = "{estimate} ({std.error}){stars}"
 )
 
 modelsummary(
